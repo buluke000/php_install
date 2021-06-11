@@ -1,0 +1,120 @@
+# 更新所有预先安装的软件
+yum -y update
+# epel源 以及 yum-config-manager 指定仓库 
+yum -y install epel-release yum-utils 
+
+# 安装 REMI 源
+yum -y install http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+
+# 常用
+yum -y install htop wget vim zip unzip mlocate net-tools
+yum -y install lrzsz # 正式机器可以不要
+
+# 文件夹
+mkdir -p software/php_ext && cd software
+
+# 安装libzip
+yum remove -y libzip
+wget https://nih.at/libzip/libzip-1.2.0.tar.gz
+tar -zxvf libzip-1.2.0.tar.gz && cd libzip-1.2.0
+./configure
+make && make install
+# 更新依赖路径, centos版本小于8的,一定要执行下面这个命令,不然还是找不到 libzip
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig/"
+
+# 添加执行web 程序的用户
+groupadd -r www && useradd -g www -r -M -s /sbin/nologin www
+
+wget https://www.php.net/distributions/php-7.4.19.tar.gz
+tar xzvf php-7.4.19.tar.gz && cd php-7.4.19
+
+#安装依赖
+yum -y install libxml2-devel openssl-devel sqlite-devel libcurl-devel libicu-devel gcc-c++ oniguruma oniguruma-devel libxslt-devel libpng-devel libjpeg-devel freetype-devel
+
+#安装php
+./configure \
+--prefix=/usr/local/php \
+--with-config-file-path=/usr/local/php/etc \
+--enable-mysqlnd \
+--with-mysqli=mysqlnd \
+--with-pdo-mysql=mysqlnd \
+--enable-pdo \
+--with-iconv-dir  \
+--with-freetype \
+--with-jpeg \
+--with-zlib \
+--enable-xml \
+--enable-session \
+--disable-rpath \
+--enable-bcmath \
+--enable-shmop \
+--enable-sysvsem \
+--enable-inline-optimization \
+--with-curl \
+--enable-mbregex \
+--enable-mbstring \
+--enable-intl \
+--enable-pcntl \
+--enable-bcmath \
+--enable-ftp \
+--enable-gd \
+--with-openssl \
+--with-mhash \
+--enable-pcntl \
+--enable-sockets \
+--with-xmlrpc \
+--with-zip \
+--enable-soap \
+--with-gettext \
+--enable-opcache \
+--enable-maintainer-zts \
+--with-xsl \
+--enable-tokenizer \
+--enable-fpm
+# --disable-fileinfo # 看项目是否关闭
+
+make && make install
+
+#目录
+/usr/local/php/bin/php -v
+/usr/local/php/bin/php -m
+cp /usr/local/php/bin/php /usr/bin/php
+cp php.ini-production /usr/local/php/etc/php.ini
+cp /usr/local/php/etc/php-fpm.conf.default /usr/local/php/etc/php-fpm.conf
+cp /usr/local/php/etc/php-fpm.d/www.conf.default /usr/local/php/etc/php-fpm.d/www.conf
+
+# php.ini 配置
+vim /usr/local/php/etc/php.ini
+## # 时区
+date.timezone = Asia/Shanghai
+##
+
+# php-fpm
+vim /usr/local/php/etc/php-fpm.d/www.conf
+##
+user = www
+group = www
+##
+
+#添加systemctl 服务
+vim /usr/lib/systemd/system/php-fpm.service
+##
+[Unit]
+Description=The PHP FastCGI Process Manager
+After=network.target
+
+[Service]
+Type=simple
+PIDFile=/usr/local/php/var/run/php-fpm.pid
+ExecStart=/usr/local/php/sbin/php-fpm --nodaemonize --fpm-config /usr/local/php/etc/php-fpm.conf
+ExecReload=/bin/kill -USR2 $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target
+##
+systemctl start php-fpm 
+systemctl status php-fpm
+systemctl enable php-fpm # 开机自启动
+

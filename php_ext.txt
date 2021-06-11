@@ -1,0 +1,10 @@
+# 本地关闭防火墙
+systemctl stop firewalld
+systemctl enable firewalld
+
+# 查看端口
+netstat -nultp
+
+# 安装 composer
+curl -sS https://getcomposer.org/installer | php
+mv composer.phar /usr/local/bin/composer

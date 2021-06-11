@@ -1,0 +1,94 @@
+# 软件要归类
+mkdir -p software/php_ext
+
+# 下载软件
+wget http://nginx.org/download/nginx-1.16.1.tar.gz
+wget https://www.php.net/distributions/php-7.2.27.tar.gz
+
+### nginx ###
+# 添加执行web 程序的用户
+groupadd -r www && useradd -g www -r -M -s /sbin/nologin www
+
+# nginx 依赖包
+yum -y install openssl-devel pcre-devel gcc
+
+# nginx 开始安装
+tar zxvf nginx-1.16.1.tar.gz
+cd nginx-1.16.1
+# 编译安装
+./configure --user=www --group=www --prefix=/usr/local/nginx --sbin-path=/usr/local/nginx/sbin/nginx  --with-http_stub_status_module --with-http_ssl_module --with-http_gzip_static_module
+make  && make install
+
+ln -s /usr/local/nginx/sbin/nginx  /usr/sbin/nginx # 软链接
+mkdir /usr/local/nginx/conf/vhosts # 独立配置文件
+vim /usr/local/nginx/conf/nginx.conf 
+##
+user www;
+worker_processes  4; # 一般情况设置和cpu 核数一样
+include vhosts/*.conf; # 在http 模块中最后一行引入其站点他配置
+##
+
+### php ###
+
+# php 依赖包
+yum -y install libtool gd libmcrypt libmcrypt-devel mhash mhash-devel libevent libevent-devel mcrypt libxml2 libxml2-devel libpng-devel libjpeg-devel curl-devel openssl-devel graphviz bzip2 bzip2-devel readline-devel freetype freetype-devel bison re2c
+wget https://nih.at/libzip/libzip-1.2.0.tar.gz
+tar -zxvf libzip-1.2.0.tar.gz
+cd libzip-1.2.0
+./configure
+make && make install
+
+cp /usr/local/lib/libzip/include/zipconf.h /usr/local/include/zipconf.h
+#添加搜索路径到配置文件
+echo '/usr/local/lib64
+/usr/local/lib
+/usr/lib
+/usr/lib64'>>/etc/ld.so.conf
+# ldconfig -v
+
+# 编译安装
+tar xzvf php-7.2.27.tar.gz
+cd php-7.2.27
+./configure --prefix=/usr/local/php72 --with-config-file-path=/usr/local/php72/etc --enable-zip --disable-debug --enable-shared --enable-opcache --enable-fpm --with-fpm-user=www --with-fpm-group=www  --with-mysqli=mysqlnd --with-pdo-mysql=mysqlnd --with-gettext --enable-mbstring --with-iconv --enable-pdo --with-mhash --with-openssl --enable-bcmath --enable-soap --with-libxml-dir --enable-pcntl --enable-shmop --enable-sysvsem --with-libzip  --with-zlib --with-curl=/usr --with-gd --with-freetype-dir=/usr --with-gd --with-jpeg-dir=/usr --with-libdir=lib64 --enable-sockets --enable-phar --enable-inline-optimization --with-readline --with-bz2=/usr --without-sqlite3 --without-pdo-sqlite --without-pear  --disable-fileinfo
+make -j 8 && make install 
+
+ln -s /usr/local/php72  /usr/local/php
+ln -s /usr/local/php72/bin/php /usr/sbin/php
+ln -s /usr/local/php72/sbin/php-fpm /usr/sbin/php-fpm
+cp php.ini-production /usr/local/php/etc/php.ini
+cp sapi/fpm/php-fpm.service /usr/lib/systemd/system/
+mv /usr/local/php/etc/php-fpm.conf.default /usr/local/php/etc/php-fpm.conf 
+#echo -e "[www]\nuser = www\ngroup = www\nlisten = /dev/shm/php-fpm.sock\nlisten.owner = www\nlisten.group = www\nlisten.mode = 0660\npm = static\npm.max_children = 100\npm.max_requests = 500\npm.status_path = /status\nrequest_terminate_timeout = 60\n" > /usr/local/php/etc/php-fpm.d/www.conf
+
+vim /usr/local/php/etc/php.ini
+##
+date.timezone = Asia/HONG_KONG
+opcache.enable =1  # opcache 参数的优化，看具体项目，文件的多少，设置可缓存项目文件个数，以及经检测文件更新时间。
+##
+
+
+### mysql ###
+
+# 下载MySQL yum源
+wget https://dev.mysql.com/get/mysql80-community-release-el7-1.noarch.rpm
+# 安装yum源
+yum localinstall mysql80-community-release-el7-1.noarch.rpm
+# 更新yum源
+yum clean all
+yum makecache
+# 创建Mysql账户
+groupadd mysql
+useradd -g mysql -r -M -s /sbin/nologin mysql
+# 开始安装MySQL
+yum install mysql-community-server
+# 启动
+systemctl start mysqld
+# 修改密码
+cat /var/log/mysqld.log | grep password   # 查看初始化密码
+mysql -u root -p
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'StmM6a8@Hv!MQ8Da';
+# -- 可以不设置
+use mysql;
+update user set host='%' where user='root'; # 更改为远程登录帐号
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%'WITH GRANT OPTION; # 允许任何主机访问数据库
+FLUSH PRIVILEGES;

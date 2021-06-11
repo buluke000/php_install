@@ -1,0 +1,255 @@
+
+# 更新所有预先安装的软件
+yum -y update
+# epel源 以及 yum-config-manager 指定仓库 
+yum -y install epel-release yum-utils 
+
+# 安装 REMI 源
+yum -y install http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+
+# 常用
+yum -y install htop wget vim zip unzip mlocate
+yum -y install lrzsz # 正式机器可以不要
+
+# 文件夹
+mkdir -p software/php_ext && cd software
+
+# 添加执行web 程序的用户
+groupadd -r www && useradd -g www -r -M -s /sbin/nologin www
+
+### 安装php ###
+
+# 下载软件
+wget https://www.php.net/distributions/php-5.6.40.tar.gz
+
+# php 依赖包
+yum -y install libtool gd libmcrypt libmcrypt-devel mhash mhash-devel libevent libevent-devel mcrypt libxml2 libxml2-devel libpng-devel libjpeg-devel curl-devel openssl-devel graphviz bzip2 bzip2-devel readline-devel freetype freetype-devel bison re2c libXpm-devel libicu-devel gcc-c++ libxslt-devel*
+
+# 解压
+tar xzvf php-5.6.40.tar.gz && cd php-5.6.40
+
+# 编译安装
+./configure --prefix=/opt/php --with-config-file-path=/opt/php/etc --with-config-file-scan-dir=/opt/php/conf.d --enable-fpm --with-fpm-user=www --with-fpm-group=www --with-mysql=mysqlnd --with-mysqli=mysqlnd --with-pdo-mysql=mysqlnd --with-iconv-dir --with-freetype-dir=/opt/freetype --with-jpeg-dir --with-png-dir --with-zlib --with-libxml-dir=/usr --enable-xml --disable-rpath --enable-bcmath --enable-shmop --enable-sysvsem --enable-inline-optimization --with-curl --enable-mbregex --enable-mbstring --with-mcrypt --enable-ftp --with-gd --enable-gd-native-ttf --with-openssl --with-mhash --enable-pcntl --enable-sockets --with-xmlrpc --enable-zip --enable-soap --with-gettext --enable-opcache --enable-intl --with-xsl 
+make -j 8 && make install 
+
+# 软链接|配置文件
+ln -s /opt/php /usr/local/php
+ln -s /opt/php/bin/php /usr/sbin/php
+ln -s /opt/php/sbin/php-fpm /usr/sbin/php-fpm
+cp php.ini-production /opt/php/etc/php.ini
+cp /opt/php/etc/php-fpm.conf.default /opt/php/etc/php-fpm.conf 
+
+# php.ini 配置
+vim /usr/local/php/etc/php.ini
+## # 时区
+date.timezone = Asia/HONG_KONG
+##
+
+#添加systemctl 服务
+vim /usr/lib/systemd/system/php-fpm.service
+##
+[Unit]
+Description=The PHP FastCGI Process Manager
+After=network.target
+
+[Service]
+Type=simple
+PIDFile=/usr/local/php/var/run/php-fpm.pid
+ExecStart=/usr/local/php/sbin/php-fpm --nodaemonize --fpm-config /usr/local/php/etc/php-fpm.conf
+ExecReload=/bin/kill -USR2 $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target
+##
+systemctl start php-fpm 
+systemctl status php-fpm
+systemctl enable php-fpm # 开机自启动
+
+#安装freetds
+cd /root/software
+wget http://www.freetds.org/files/stable/freetds-patched.tar.gz
+tar -zxvf freetds-patched.tar.gz && cd freetds-1.2.18
+#wget http://www.freetds.org/files/stable/freetds-1.00.tar.gz
+#tar -zxvf freetds-1.00.tar.gz
+#cd /root/software/freetds-1.00
+./configure --prefix=/usr/local/freetds
+make && make install
+
+#安装mssql扩展
+cd /root/software/php-5.6.40/ext/mssql/
+/usr/local/php/bin/phpize
+./configure --with-php-config=/opt/php/bin/php-config --with-mssql=/usr/local/freetds/
+make && make install
+vim /opt/php/etc/php.ini
+##
+extension=mssql.so
+##
+php -m | grep mssql
+
+#安装pdo_dblib扩展
+cd /root/software/php-5.6.40/ext/pdo_dblib/
+/usr/local/php/bin/phpize
+./configure --with-php-config=/opt/php/bin/php-config --with-pdo_dblib=/usr/local/freetds/
+make && make install
+vim /opt/php/etc/php.ini
+##
+extension=pdo_dblib.so
+##
+php -m | grep pdo_dblib
+
+#redis扩展
+cd /root/software/php_ext
+wget http://pecl.php.net/get/redis-4.2.0.tgz
+tar -zxvf redis-4.2.0.tgz && cd redis-4.2.0
+/usr/local/php/bin/phpize
+./configure --with-php-config=/opt/php/bin/php-config
+make && make install
+vim /opt/php/etc/php.ini
+##
+extension=redis.so
+##
+php -m | grep redis
+
+#999线上同步配置
+vim /opt/php/etc/php-fpm.conf
+##
+pm.max_children = 500
+##
+
+systemctl restart php-fpm # 重启php
+
+### 安装nginx ###
+cd /root/software
+wget http://nginx.org/download/nginx-1.18.0.tar.gz
+tar zxvf nginx-1.18.0.tar.gz && cd nginx-1.18.0
+./configure --user=www --group=www --prefix=/opt/nginx --sbin-path=/opt/nginx/sbin/nginx  --with-http_stub_status_module --with-http_ssl_module --with-http_gzip_static_module
+make  && make install
+
+ln -s /opt/nginx /usr/local/nginx
+ln -s /opt/nginx/sbin/nginx /usr/sbin/nginx
+mkdir /opt/nginx/conf/vhosts
+
+vim /opt/nginx/conf/nginx.conf
+##
+worker_processes  16; // 一般情况设置和cpu 核数一样
+user www;
+
+#在http 模块中最后一行引入其站点他配置
+include vhosts/*.conf; 
+##
+
+#添加systemctl 服务
+vim /lib/systemd/system/nginx.service
+###
+[Unit]
+Description=The NGINX HTTP and reverse
+proxy serverAfter=syslog.target network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+ExecStartPre=/usr/sbin/nginx -t
+ExecStart=/usr/sbin/nginx
+ExecReload=/usr/sbin/nginx -s reload
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+###
+systemctl start nginx.service 
+systemctl enable nginx.service # 开机启动
+
+## 本地配置 hosts
+vim /etc/hosts
+##
+127.0.0.1  777.com
+127.0.0.1  kefu.com
+127.0.0.1  999.com
+127.0.0.1  999redis.com
+127.0.0.1  999mf.com
+127.0.0.1  fk.com
+127.0.0.1  admin.fk.com
+192.168.8.202  git.fk.com
+##
+
+## 本地配置 freetds
+vim /usr/local/freetds/etc/freetds.conf
+##
+[sqlserveronline999pro]
+        host = 192.168.11.13
+        port = 1433
+        tds version = 8.0
+[sqlserveronline666pro]
+        host = 192.168.10.86
+        port = 1433
+        tds version = 8.0
+[sqlserveronlinefangkapro]
+        host = 192.168.8.204
+        port = 1433
+        tds version = 8.0
+##
+
+## 本地配置 php
+vim /opt/php/etc/php.ini
+##
+projectenv=dev
+PROJECTENV=dev
+env=dev
+##
+
+## 本地配置 nginx
+vim /opt/nginx/conf/vhosts/fk.conf
+##
+server
+{
+    listen 80;
+    #listen [::]:80;
+    server_name admin.fk.com
+    index index.html index.htm index.php default.html default.htm default.php;
+    root  /opt/nginx/html/fk_web/public;
+
+    # include other.conf;
+    #error_page   404   /404.html;
+    location ~ [^/]\.php(/|$)
+    {
+        # comment try_files $uri =404; to enable pathinfo
+        try_files $uri =404;
+        #fastcgi_pass  unix:/tmp/php-cgi.sock;
+        fastcgi_pass  127.0.0.1:9000;
+        fastcgi_index index.php;
+        include fastcgi.conf;
+        #include pathinfo.conf;
+    }
+    location / {
+            if (!-e $request_filename){
+                rewrite ^/(.*) /index.php last;
+            }
+        }
+
+    location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+    {
+        expires      30d;
+    }
+
+    location ~ .*\.(js|css)?$
+    {
+        expires      12h;
+    }
+
+    #access_log  /opt/nginx/logs/admin.fk.access.log  info;
+    #access_log  /opt/nginx/logs/admin.fk.error.log  info;
+}
+##
+重启php nginx
+
+
+# 脚本
+chmod a+x /opt/nginx/html/fk_web/application/crontab.dev.sh
+mkdir -p /opt/crontab/
+chown -R www:www /opt/crontab/
+crontab -e
+##
+* * * * * root su -s /bin/bash -c '/opt/nginx/html/fk_web/application/crontab.dev.sh >> /opt/crontab/crontab.log 2>&1' www
+##
