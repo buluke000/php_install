@@ -1,0 +1,31 @@
+# laravel
+server {
+    listen 80;
+    server_name dev.laravel.com;
+    root /data/www/laravel8/public;
+    client_max_body_size 18M;
+    index index.php;
+
+    if ($time_iso8601 ~ "^(\d{4})-(\d{2})-(\d{2})") {
+        set $date $1$2$3;
+    }
+    access_log  /opt/nginx/logs/access_$date.log;
+    error_log  /opt/nginx/logs/error.log;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass   127.0.0.1:9000;
+        #fastcgi_pass   unix:/dev/shm/php-fpm.sock;
+        fastcgi_index  index.php;
+        fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+        fastcgi_param  APP_ENV dev;
+        include        fastcgi_params;
+    }
+
+    location ~/\.ht {
+        deny all;
+    }
+}
