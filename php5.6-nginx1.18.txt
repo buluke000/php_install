@@ -112,10 +112,13 @@ extension=redis.so
 ##
 php -m | grep redis
 
-#999线上同步配置
+#php-fpm 配置优化
 vim /opt/php/etc/php-fpm.conf
 ##
-pm.max_children = 500
+pm.max_children = 128
+pm.start_servers = 16
+pm.min_spare_servers = 8
+pm.max_spare_servers = 128
 ##
 
 systemctl restart php-fpm # 重启php
